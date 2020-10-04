@@ -50,7 +50,7 @@
 
 use crate::internal_math;
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     convert::{Infallible, TryInto as _},
     fmt,
     hash::{Hash, Hasher},
@@ -330,7 +330,7 @@ impl<I: Id> DynamicModInt<I> {
     /// ```
     #[inline]
     pub fn modulus() -> u32 {
-        I::companion_barrett().with(|bt| bt.borrow().umod())
+        I::companion_barrett().with(|bt| bt.get().umod())
     }
 
     /// Sets a modulus.
@@ -354,7 +354,7 @@ impl<I: Id> DynamicModInt<I> {
         if modulus == 0 {
             panic!("the modulus must not be 0");
         }
-        I::companion_barrett().with(|bt| *bt.borrow_mut() = Barrett::new(modulus))
+        I::companion_barrett().with(|bt| bt.set(Barrett::new(modulus)))
     }
 
     /// Creates a new `DynamicModInt`.
@@ -442,23 +442,23 @@ impl<I: Id> ModIntBase for DynamicModInt<I> {
 }
 
 pub trait Id: 'static + Copy + Eq {
-    // TODO: Make `internal_math::Barret` `Copy`.
-    fn companion_barrett() -> &'static LocalKey<RefCell<Barrett>>;
+    fn companion_barrett() -> &'static LocalKey<Cell<Barrett>>;
 }
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 pub enum DefaultId {}
 
 impl Id for DefaultId {
-    fn companion_barrett() -> &'static LocalKey<RefCell<Barrett>> {
+    fn companion_barrett() -> &'static LocalKey<Cell<Barrett>> {
         thread_local! {
-            static BARRETT: RefCell<Barrett> = RefCell::default();
+            static BARRETT: Cell<Barrett> = Cell::default();
         }
         &BARRETT
     }
 }
 
 /// Pair of _m_ and _ceil(2⁶⁴/m)_.
+#[derive(Copy, Clone)]
 pub struct Barrett(internal_math::Barrett);
 
 impl Barrett {
@@ -469,12 +469,12 @@ impl Barrett {
     }
 
     #[inline]
-    fn umod(&self) -> u32 {
+    fn umod(self) -> u32 {
         self.0.umod()
     }
 
     #[inline]
-    fn mul(&self, a: u32, b: u32) -> u32 {
+    fn mul(self, a: u32, b: u32) -> u32 {
         self.0.mul(a, b)
     }
 }
@@ -810,7 +810,7 @@ impl<M: Modulus> InternalImplementations for StaticModInt<M> {
 impl<I: Id> InternalImplementations for DynamicModInt<I> {
     #[inline]
     fn mul_impl(lhs: Self, rhs: Self) -> Self {
-        I::companion_barrett().with(|bt| Self::raw(bt.borrow().mul(lhs.val, rhs.val)))
+        I::companion_barrett().with(|bt| Self::raw(bt.get().mul(lhs.val, rhs.val)))
     }
 }
 

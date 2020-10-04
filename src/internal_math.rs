@@ -19,6 +19,7 @@ pub(crate) fn safe_mod(mut x: i64, m: i64) -> i64 {
 /// Fast modular by barrett reduction
 /// Reference: https://en.wikipedia.org/wiki/Barrett_reduction
 /// NOTE: reconsider after Ice Lake
+#[derive(Copy, Clone)]
 pub(crate) struct Barrett {
     pub(crate) _m: u32,
     pub(crate) im: u64,
@@ -39,7 +40,7 @@ impl Barrett {
 
     /// # Returns
     /// `m`
-    pub(crate) fn umod(&self) -> u32 {
+    pub(crate) fn umod(self) -> u32 {
         self._m
     }
 
@@ -50,7 +51,7 @@ impl Barrett {
     /// # Returns
     /// a * b % m
     #[allow(clippy::many_single_char_names)]
-    pub(crate) fn mul(&self, a: u32, b: u32) -> u32 {
+    pub(crate) fn mul(self, a: u32, b: u32) -> u32 {
         // [1] m = 1
         // a = b = im = 0, so okay
 
