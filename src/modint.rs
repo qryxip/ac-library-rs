@@ -50,7 +50,7 @@
 
 use crate::internal_math;
 use std::{
-    cell::RefCell,
+    cell::{RefCell, UnsafeCell},
     convert::{Infallible, TryInto as _},
     fmt,
     hash::{Hash, Hasher},
@@ -58,7 +58,6 @@ use std::{
     marker::PhantomData,
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
     str::FromStr,
-    sync::atomic::{self, AtomicU32, AtomicU64},
     thread::LocalKey,
 };
 
@@ -331,7 +330,10 @@ impl<I: Id> DynamicModInt<I> {
     /// ```
     #[inline]
     pub fn modulus() -> u32 {
-        I::companion_barrett().umod()
+        // # Safety
+        //
+        // Nothing. Do not ever do this.
+        unsafe { I::companion_barrett().umod() }
     }
 
     /// Sets a modulus.
@@ -355,7 +357,12 @@ impl<I: Id> DynamicModInt<I> {
         if modulus == 0 {
             panic!("the modulus must not be 0");
         }
-        I::companion_barrett().store(modulus);
+        // # Safety
+        //
+        // Nothing. Do not ever do this.
+        unsafe {
+            I::companion_barrett().store(modulus);
+        }
     }
 
     /// Creates a new `DynamicModInt`.
@@ -457,19 +464,33 @@ impl Id for DefaultId {
 }
 
 /// $(m, \lceil 2^{64}/m \rceil)$ for barrett reduction.
-pub struct Barrett {
-    m: AtomicU32,
-    im: AtomicU64,
+pub struct Barrett(UnsafeCell<BarrettInner>);
+
+struct BarrettInner {
+    m: u32,
+    im: u64,
+}
+
+/// # Safety
+///
+/// Nothing. Do not ever do this.
+unsafe impl Sync for Barrett {}
+
+impl BarrettInner {
+    #[inline]
+    pub const fn new(m: u32) -> Self {
+        Self {
+            m,
+            im: (-1i64 as u64 / m as u64).wrapping_add(1),
+        }
+    }
 }
 
 impl Barrett {
     /// Creates a new `Barrett`.
     #[inline]
     pub const fn new(m: u32) -> Self {
-        Self {
-            m: AtomicU32::new(m),
-            im: AtomicU64::new((-1i64 as u64 / m as u64).wrapping_add(1)),
-        }
+        Self(UnsafeCell::new(BarrettInner::new(m)))
     }
 
     #[inline]
@@ -477,23 +498,29 @@ impl Barrett {
         Self::new(998_244_353)
     }
 
+    /// # Safety
+    ///
+    /// Nothing. Do not ever do this.
     #[inline]
-    fn store(&self, m: u32) {
-        let im = (-1i64 as u64 / m as u64).wrapping_add(1);
-        self.m.store(m, atomic::Ordering::SeqCst);
-        self.im.store(im, atomic::Ordering::SeqCst);
+    unsafe fn store(&self, m: u32) {
+        self.0.get().write(BarrettInner::new(m))
     }
 
+    /// # Safety
+    ///
+    /// Nothing. Do not ever do this.
     #[inline]
-    fn umod(&self) -> u32 {
-        self.m.load(atomic::Ordering::SeqCst)
+    unsafe fn umod(&self) -> u32 {
+        self.0.get().read().m
     }
 
+    /// # Safety
+    ///
+    /// Nothing. Do not ever do this.
     #[inline]
-    fn mul(&self, a: u32, b: u32) -> u32 {
-        let m = self.m.load(atomic::Ordering::SeqCst);
-        let im = self.im.load(atomic::Ordering::SeqCst);
-        internal_math::mul_mod(a, b, m, im)
+    unsafe fn mul(&self, a: u32, b: u32) -> u32 {
+        let inner = self.0.get().read();
+        internal_math::mul_mod(a, b, inner.m, inner.im)
     }
 }
 
@@ -828,7 +855,10 @@ impl<M: Modulus> InternalImplementations for StaticModInt<M> {
 impl<I: Id> InternalImplementations for DynamicModInt<I> {
     #[inline]
     fn mul_impl(lhs: Self, rhs: Self) -> Self {
-        Self::raw(I::companion_barrett().mul(lhs.val, rhs.val))
+        // # Safety
+        //
+        // Nothing. Do not ever do this.
+        unsafe { Self::raw(I::companion_barrett().mul(lhs.val, rhs.val)) }
     }
 }
 
